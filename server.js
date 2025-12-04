@@ -19,7 +19,7 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://aquamarine-semolina-dd6e68.netlify.app'
+    'https://meek-granita-5ba087.netlify.app'
   ],
   credentials: true
 }));
