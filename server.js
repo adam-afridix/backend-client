@@ -19,7 +19,7 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:5173',
-    'https://meek-granita-5ba087.netlify.app'
+    'https://multiformat-to-pdf.netlify.app/'
   ],
   credentials: true
 }));
