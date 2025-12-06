@@ -106,7 +106,7 @@ app.get("/api/auth/verify", authenticateToken, (req, res) => {
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  process.env.REACT_APP_API_URL
+  process.env.GOOGLE_REDIRECT_URI
 );
 
 // Token file path
