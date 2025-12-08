@@ -4,9 +4,6 @@ const multer = require("multer");
 const { google } = require("googleapis");
 const dotenv = require("dotenv");
 const stream = require("stream");
-const fs = require("fs");
-const path = require("path");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 dotenv.config();
@@ -14,7 +11,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// CORS Configuration - ONLY ONCE
+// CORS Configuration
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -62,18 +59,14 @@ app.post("/api/auth/login", async (req, res) => {
   const { username, password, rememberMe } = req.body;
 
   try {
-    // Check username
     if (username !== process.env.ADMIN_USERNAME) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    // Check password (plain text comparison for simplicity)
-    // For production, use bcrypt.compare() with hashed passwords
     if (password !== process.env.ADMIN_PASSWORD) {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
-    // Create token
     const expiresIn = rememberMe ? '30d' : '24h';
     const token = jwt.sign(
       { username: username },
@@ -102,27 +95,26 @@ app.get("/api/auth/verify", authenticateToken, (req, res) => {
   res.json({ valid: true, user: req.user });
 });
 
-// OAuth2 configuration
+// ============================================
+// GOOGLE OAUTH2 CONFIGURATION
+// ============================================
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.GOOGLE_REDIRECT_URI
 );
 
-// Token file path
-const TOKEN_PATH = path.join(__dirname, "google-token.json");
-
-// Load saved token
-if (fs.existsSync(TOKEN_PATH)) {
-  const token = JSON.parse(fs.readFileSync(TOKEN_PATH));
-  oauth2Client.setCredentials(token);
-  console.log("✅ OAuth token loaded from file");
-}
-
-// Save token
-function saveToken(token) {
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(token));
-  console.log("✅ Token saved to file");
+// ✅ LOAD TOKEN FROM ENVIRONMENT VARIABLE (not file)
+if (process.env.GOOGLE_OAUTH_TOKEN) {
+  try {
+    const token = JSON.parse(process.env.GOOGLE_OAUTH_TOKEN);
+    oauth2Client.setCredentials(token);
+    console.log("✅ OAuth token loaded from environment variable");
+  } catch (error) {
+    console.error("❌ Failed to parse GOOGLE_OAUTH_TOKEN:", error);
+  }
+} else {
+  console.log("⚠️ GOOGLE_OAUTH_TOKEN not set in environment");
 }
 
 const drive = google.drive({ version: "v3", auth: oauth2Client });
@@ -163,8 +155,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// Step 1: Get OAuth URL (🔒 PROTECTED)
-app.get("/api/auth/url", authenticateToken, (req, res) => {
+// Step 1: Get OAuth URL
+app.get("/api/auth/url", (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     scope: ["https://www.googleapis.com/auth/drive.file"],
@@ -184,23 +176,38 @@ app.get("/api/auth/callback", async (req, res) => {
   try {
     const { tokens } = await oauth2Client.getToken(code);
     oauth2Client.setCredentials(tokens);
-    saveToken(tokens);
+
+    // ✅ PRINT TOKEN TO CONSOLE FOR COPYING TO RENDER
+    console.log("\n========================================");
+    console.log("🔑 COPY THIS TO RENDER ENVIRONMENT:");
+    console.log("Variable Name: GOOGLE_OAUTH_TOKEN");
+    console.log("Value:");
+    console.log(JSON.stringify(tokens));
+    console.log("========================================\n");
 
     res.send(`
       <html>
         <body style="font-family: Arial; text-align: center; padding: 50px;">
           <h1 style="color: #22c55e;">✅ Authentication Successful!</h1>
-          <p>You can close this window and return to your app.</p>
+          <p><strong>IMPORTANT:</strong> Check Render logs and copy the token to environment variables.</p>
+          <p>Instructions:</p>
+          <ol style="text-align: left; max-width: 500px; margin: 20px auto;">
+            <li>Go to Render Dashboard → Your Service → Environment</li>
+            <li>Add variable: <strong>GOOGLE_OAUTH_TOKEN</strong></li>
+            <li>Paste the token from logs as the value</li>
+            <li>Click Save and Manual Deploy</li>
+          </ol>
+          <p>You can close this window.</p>
         </body>
       </html>
     `);
   } catch (error) {
     console.error("Error getting tokens:", error);
-    res.status(500).send("Authentication failed");
+    res.status(500).send("Authentication failed: " + error.message);
   }
 });
 
-// Auth status (🔒 PROTECTED)
+// Auth status
 app.get("/api/auth/status", authenticateToken, (req, res) => {
   const authenticated = !!oauth2Client.credentials.access_token;
   res.json({
@@ -214,7 +221,7 @@ app.get("/api/auth/status", authenticateToken, (req, res) => {
 // ============================================
 app.post(
   "/api/upload",
-  authenticateToken, // 👈 Added authentication
+  authenticateToken,
   upload.fields([
     { name: "files", maxCount: 50 },
     { name: "metadata", maxCount: 1 },
@@ -223,8 +230,8 @@ app.post(
     try {
       if (!oauth2Client.credentials.access_token) {
         return res.status(401).json({
-          error: "Not authenticated",
-          message: "Authenticate with Google first",
+          error: "Not authenticated with Google Drive",
+          message: "Please authenticate with Google Drive first",
         });
       }
 
@@ -337,7 +344,6 @@ app.get("/api/files", authenticateToken, async (req, res) => {
 // n8n WEBHOOK ROUTES (🔒 PROTECTED)
 // ============================================
 
-// Route to send YouTube link to n8n (🔒 PROTECTED)
 app.post("/api/n8n/youtube-link", authenticateToken, async (req, res) => {
   try {
     const { url } = req.body;
@@ -407,7 +413,6 @@ app.post("/api/n8n/youtube-link", authenticateToken, async (req, res) => {
   }
 });
 
-// Paste text route (🔒 PROTECTED)
 app.post("/api/n8n/paste-text", authenticateToken, async (req, res) => {
   try {
     const { content, metadata } = req.body;
@@ -419,7 +424,6 @@ app.post("/api/n8n/paste-text", authenticateToken, async (req, res) => {
     console.log("Sending text to n8n, length:", content.length);
     console.log("Metadata received:", metadata);
 
-    // Build the payload with all data
     const payload = {
       type: "text",
       content: content,
@@ -428,7 +432,6 @@ app.post("/api/n8n/paste-text", authenticateToken, async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
-    // Add metadata if provided
     if (metadata) {
       payload.metadata = {
         title: metadata.title || "",
@@ -503,7 +506,8 @@ app.listen(PORT, () => {
   if (oauth2Client.credentials.access_token) {
     console.log("🔐 Authenticated with Google Drive");
   } else {
-    console.log(`⚠️ Not authenticated - open http://localhost:${PORT}/api/auth/url`);
+    console.log(`⚠️ Not authenticated with Google Drive`);
+    console.log(`   Get auth URL: http://localhost:${PORT}/api/auth/url`);
   }
 
   console.log("🚀 Ready for file uploads and n8n webhooks!");
