@@ -164,7 +164,7 @@ app.get("/", (req, res) => {
 });
 
 // Step 1: Get OAuth URL (🔒 PROTECTED)
-app.get("/api/auth/url", (req, res) => {
+app.get("/api/auth/url", authenticateToken, (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
     scope: ["https://www.googleapis.com/auth/drive.file"],
